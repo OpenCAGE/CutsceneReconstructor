@@ -61,16 +61,12 @@ namespace CombineLevels
                 animShots[shot_number].Add(data);
             }
 
-            List<string> initialisedCharacters = new List<string>();
-
-            CAGEAnimation prevAnimEnt = null;
+            Dictionary<string, FunctionEntity> previousAnimEnts = new Dictionary<string, FunctionEntity>();
             foreach (KeyValuePair<int, List<string[]>> shot in animShots.OrderBy(x => x.Key))
             {
-                CAGEAnimation animEnt = null;
-
                 foreach (string[] shotAnim in shot.Value)
                 {
-                    animEnt = new CAGEAnimation();
+                    FunctionEntity animEnt = composite.AddFunction(FunctionType.CMD_PlayAnimation);
                     ((cString)animEnt.AddParameter("AnimationSet", DataType.STRING).content).value = shotAnim[0];
                     ((cString)animEnt.AddParameter("Animation", DataType.STRING).content).value = shotAnim[1];
 
@@ -87,20 +83,18 @@ namespace CombineLevels
                     ((cBool)animEnt.AddParameter("StartInstantly", DataType.BOOL).content).value = true;
                     */
 
-                    if (!initialisedCharacters.Contains(shotAnim[0]))
+                    if (!previousAnimEnts.ContainsKey(shotAnim[0]))
                     {
                         FunctionEntity triggerBind = GetCharacterTrigger(shotAnim[0]);
                         triggerBind.AddParameterLink("bound_trigger", animEnt, "apply_start");
-                        initialisedCharacters.Add(shotAnim[0]);
+                        previousAnimEnts.Add(shotAnim[0], animEnt);
                     }
-
-                    composite.functions.Add(animEnt);
+                    else
+                    {
+                        previousAnimEnts[shotAnim[0]].AddParameterLink("finished", animEnt, "apply_start");
+                        previousAnimEnts[shotAnim[0]] = animEnt;
+                    }
                 }
-
-                if (prevAnimEnt != null)
-                    prevAnimEnt.AddParameterLink("finished", animEnt, "apply_start");
-
-                prevAnimEnt = animEnt;
             }
 
             commands.Entries.Add(composite);
@@ -113,7 +107,7 @@ namespace CombineLevels
 
         private static FunctionEntity GetCharacterTrigger(string AnimationSet)
         {
-            FunctionEntity triggerBind = new FunctionEntity(FunctionType.TriggerBindCharacter);
+            FunctionEntity triggerBind = composite.AddFunction(FunctionType.TriggerBindCharacter);
             triggerBind.AddParameter("bound_trigger", DataType.INTEGER);
 
             string characterCompositePath = "";
@@ -127,6 +121,15 @@ namespace CombineLevels
                     break;
                 case "RIPLEY":
                     characterCompositePath = "ARCHETYPES\\CUTSCENE_ACTORS\\RIPLEY_3P_V4";
+                    break;
+                case "TAYLOR":
+                    characterCompositePath = "ARCHETYPES\\NPCS\\ACTORS\\TAYLOR";
+                    break;
+                case "SAMUELS":
+                    characterCompositePath = "ARCHETYPES\\NPCS\\ACTORS\\SAMUELS";
+                    break;
+                case "RICARDO":
+                    characterCompositePath = "ARCHETYPES\\NPCS\\ACTORS\\RICARDO";
                     break;
                 default:
                     throw new Exception("Unknown character: " + AnimationSet);
