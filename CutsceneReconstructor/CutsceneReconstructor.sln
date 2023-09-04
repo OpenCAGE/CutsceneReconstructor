@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.3.32929.385
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CombineLevels", "CombineLevels\CombineLevels.csproj", "{EFFF99B4-438F-4D19-B405-D6DF36A1AF9F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CutsceneReconstructor", "CutsceneReconstructor\CutsceneReconstructor.csproj", "{EFFF99B4-438F-4D19-B405-D6DF36A1AF9F}"
 	ProjectSection(ProjectDependencies) = postProject
 		{0C1CBACE-3575-4673-8638-6C48ACE208DA} = {0C1CBACE-3575-4673-8638-6C48ACE208DA}
 	EndProjectSection
