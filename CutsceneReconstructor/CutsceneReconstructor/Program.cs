@@ -18,7 +18,7 @@ namespace CombineLevels
     {
         static string pathToAI = "G:\\SteamLibrary\\steamapps\\common\\Alien Isolation";
 
-        static string CutsceneName = "AYZ_SC24";
+        static string CutsceneName = "AYZ_SC26";
         static string LevelToAddTo = "HAB_SHOPPINGCENTRE";
 
         static Commands commands;
@@ -55,7 +55,11 @@ namespace CombineLevels
                 if (data.Length != 2) continue;
                 data[1] = data[1].ToLower();
 
-                int shot_number = Convert.ToInt32(data[1].Split(new[] { "sh" }, StringSplitOptions.None)[1]) / 10;
+                string shot_number_s = data[1].Split('_')[2];
+                if (shot_number_s[0] == 's') shot_number_s = shot_number_s.Substring(1);
+                if (shot_number_s[0] == 'h') shot_number_s = shot_number_s.Substring(1);
+                int shot_number = Convert.ToInt32(shot_number_s) / 10;
+
                 if (!animShots.ContainsKey(shot_number))
                     animShots.Add(shot_number, new List<string[]>());
                 animShots[shot_number].Add(data);
@@ -66,41 +70,47 @@ namespace CombineLevels
             {
                 foreach (string[] shotAnim in shot.Value)
                 {
+                    if (shotAnim[0] == "AXEL") continue; //TEMP!
+
                     FunctionEntity animEnt = composite.AddFunction(FunctionType.CMD_PlayAnimation);
                     ((cString)animEnt.AddParameter("AnimationSet", DataType.STRING).content).value = shotAnim[0];
                     ((cString)animEnt.AddParameter("Animation", DataType.STRING).content).value = shotAnim[1];
 
-                    /*
                     ((cInteger)animEnt.AddParameter("shot_number", DataType.INTEGER).content).value = shot.Key;
                     ((cInteger)animEnt.AddParameter("ConvergenceTime", DataType.INTEGER).content).value = 0;
                     ((cBool)animEnt.AddParameter("AllowCollision", DataType.BOOL).content).value = false;
                     ((cBool)animEnt.AddParameter("AllowGravity", DataType.BOOL).content).value = false;
-                    ((cBool)animEnt.AddParameter("FullCinematic", DataType.BOOL).content).value = true;
+                    //((cBool)animEnt.AddParameter("FullCinematic", DataType.BOOL).content).value = true;
                     ((cBool)animEnt.AddParameter("LocationConvergence", DataType.BOOL).content).value = true;
                     ((cBool)animEnt.AddParameter("NoIK", DataType.BOOL).content).value = true;
                     ((cBool)animEnt.AddParameter("OrientationConvergence", DataType.BOOL).content).value = true;
                     ((cBool)animEnt.AddParameter("PlayerDrivenAnimView", DataType.BOOL).content).value = false;
                     ((cBool)animEnt.AddParameter("StartInstantly", DataType.BOOL).content).value = true;
-                    */
+
+                    FunctionEntity triggerBind = GetCharacterTrigger(shotAnim[0]);
+                    triggerBind.AddParameterLink("bound_trigger", animEnt, "apply_start");
 
                     if (!previousAnimEnts.ContainsKey(shotAnim[0]))
                     {
-                        FunctionEntity triggerBind = GetCharacterTrigger(shotAnim[0]);
-                        triggerBind.AddParameterLink("bound_trigger", animEnt, "apply_start");
                         previousAnimEnts.Add(shotAnim[0], animEnt);
                     }
                     else
                     {
-                        previousAnimEnts[shotAnim[0]].AddParameterLink("finished", animEnt, "apply_start");
+                        previousAnimEnts[shotAnim[0]].AddParameterLink("finished", triggerBind, "trigger");
                         previousAnimEnts[shotAnim[0]] = animEnt;
                     }
                 }
             }
 
+            foreach (KeyValuePair<string, FunctionEntity> finalAnimFuncs in previousAnimEnts) 
+            {
+                finalAnimFuncs.Value.AddParameterLink("finished", GetCharacter(finalAnimFuncs.Key, out bool _), "despawn_npc");
+            }
+
             commands.Entries.Add(composite);
             FunctionEntity instance = commands.EntryPoints[0].AddFunction(composite);
             cTransform instancePosition = (cTransform)instance.AddParameter("position", DataType.TRANSFORM).content;
-            instancePosition.position = new Vector3(86.3651000f, 1.7223700f, -76.2859000f); //Spawn_FromTechHub
+            instancePosition.position = new Vector3(85.3651000f, 1.7223700f, -76.2859000f); //Spawn_FromTechHub
             instancePosition.position -= new Vector3(-50.0000000f, 12.8468000f, 42.0000000f); //MISSIONS offset
             commands.Save();
         }
@@ -110,6 +120,19 @@ namespace CombineLevels
             FunctionEntity triggerBind = composite.AddFunction(FunctionType.TriggerBindCharacter);
             triggerBind.AddParameter("bound_trigger", DataType.INTEGER);
 
+            FunctionEntity character = GetCharacter(AnimationSet, out bool didCreate);
+            if (didCreate)
+            {
+                checkpoint.AddParameterLink("on_checkpoint", character, "spawn_npc");
+                character.AddParameterLink("finished_spawning", triggerBind, "trigger");
+            }
+
+            triggerBind.AddParameterLink("characters", character, "npc_reference");
+            return triggerBind;
+        }
+
+        private static FunctionEntity GetCharacter(string AnimationSet, out bool didCreate)
+        {
             string characterCompositePath = "";
             switch (AnimationSet)
             {
@@ -137,15 +160,17 @@ namespace CombineLevels
             Composite characterComposite = commands.GetComposite(characterCompositePath);
 
             FunctionEntity character = composite.functions.FirstOrDefault(o => o.function == characterComposite.shortGUID);
-            if (character != null)
-                throw new Exception("Expected there to be no character already.");
+            if (character == null)
+            {
+                character = composite.AddFunction(characterComposite);
+                didCreate = true;
+            }
+            else
+            {
+                didCreate = false;
+            }
 
-            character = composite.AddFunction(characterComposite);
-            checkpoint.AddParameterLink("on_checkpoint", character, "spawn_npc");
-            character.AddParameterLink("finished_spawning", triggerBind, "trigger");
-
-            triggerBind.AddParameterLink("characters", character, "npc_reference");
-            return triggerBind;
+            return character;
         }
     }
 }
