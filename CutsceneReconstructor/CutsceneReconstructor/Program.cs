@@ -28,6 +28,7 @@ namespace CombineLevels
         [STAThread]
         static void Main()
         {
+            //Extract anim strings if we haven't already.
             string animStringPath = pathToAI + "/DATA/GLOBAL/ANIM_STRING_DB_DEBUG.BIN";
             if (!File.Exists(animStringPath))
             {
@@ -36,15 +37,19 @@ namespace CombineLevels
                 File.WriteAllBytes(animStringPath, animFile.Content);
             }
 
+            //Create a composite for us to work from within the level.
             commands = new Commands(pathToAI + "/DATA/ENV/PRODUCTION/" + LevelToAddTo + "/WORLD/COMMANDS.PAK");
             composite = commands.GetComposite(CutsceneName);
             if (composite != null)
                 commands.Entries.Remove(composite);
             composite = new Composite(CutsceneName);
+            commands.Entries.Add(composite);
 
+            //Create our checkpoint to load from.
             checkpoint = composite.AddFunction(FunctionType.DebugCheckpoint);
             ((cString)checkpoint.AddParameter("section", DataType.STRING).content).value = "Start " + CutsceneName;
 
+            //Parse all animation strings: find the cutscene we're after and break it down into the shots.
             AnimationStrings animStrings = new AnimationStrings(animStringPath);
             Dictionary<int, List<string[]>> animShots = new Dictionary<int, List<string[]>>();
             foreach (KeyValuePair<uint, string> str in animStrings.Entries)
@@ -65,6 +70,7 @@ namespace CombineLevels
                 animShots[shot_number].Add(data);
             }
 
+            //Create animation entities for the strings.
             Dictionary<string, FunctionEntity> previousAnimEnts = new Dictionary<string, FunctionEntity>();
             foreach (KeyValuePair<int, List<string[]>> shot in animShots.OrderBy(x => x.Key))
             {
@@ -74,6 +80,7 @@ namespace CombineLevels
                     if (shotAnim[0] == "CAT") continue; //TEMP!
                     if (shotAnim[0] == "RIPLEY") continue; //TEMP!
 
+                    //Create the animation entity and apply metadata.
                     FunctionEntity animEnt = composite.AddFunction(FunctionType.CMD_PlayAnimation);
                     ((cString)animEnt.AddParameter("AnimationSet", DataType.STRING).content).value = shotAnim[0];
                     ((cString)animEnt.AddParameter("Animation", DataType.STRING).content).value = shotAnim[1];
@@ -89,21 +96,24 @@ namespace CombineLevels
                     ((cBool)animEnt.AddParameter("PlayerDrivenAnimView", DataType.BOOL).content).value = false;
                     //((cBool)animEnt.AddParameter("StartInstantly", DataType.BOOL).content).value = true;
 
-                    FunctionEntity triggerBind = GetCharacterTrigger(shotAnim[0]);
-                    triggerBind.AddParameterLink("bound_trigger", animEnt, "apply_start");
-
-                    if (!previousAnimEnts.ContainsKey(shotAnim[0]))
+                    FunctionEntity character = GetCharacter(shotAnim[0], out bool didCreate);
+                    if (didCreate)
                     {
+                        //If we created the character, that means this is our first animation. Spawn the character off the checkpoint, then start us.
+                        checkpoint.AddParameterLink("on_checkpoint", character, "spawn_npc");
+                        character.AddParameterLink("finished_spawning", animEnt, "apply_start");
                         previousAnimEnts.Add(shotAnim[0], animEnt);
                     }
                     else
                     {
-                        previousAnimEnts[shotAnim[0]].AddParameterLink("finished", triggerBind, "trigger");
+                        //If we didn't create the character, that means this is a subsequent animation. Start us off the previous anim.
+                        previousAnimEnts[shotAnim[0]].AddParameterLink("finished", animEnt, "apply_start");
                         previousAnimEnts[shotAnim[0]] = animEnt;
                     }
                 }
             }
 
+            //When the animations are all over, try despawn the characters.
             foreach (KeyValuePair<string, FunctionEntity> finalAnimFuncs in previousAnimEnts) 
             {
                 finalAnimFuncs.Value.AddParameterLink("finished", GetCharacter(finalAnimFuncs.Key, out bool _), "despawn_npc");
@@ -111,7 +121,7 @@ namespace CombineLevels
                 finalAnimFuncs.Value.AddParameterLink("finished", GetCharacter(finalAnimFuncs.Key, out bool _), "deleted");
             }
 
-            commands.Entries.Add(composite);
+            //Add our animation composite to the root composite so that it'll execute on load.
             FunctionEntity instance = commands.EntryPoints[0].AddFunction(composite);
             cTransform instancePosition = (cTransform)instance.AddParameter("position", DataType.TRANSFORM).content;
 
@@ -125,22 +135,7 @@ namespace CombineLevels
             commands.Save();
         }
 
-        private static FunctionEntity GetCharacterTrigger(string AnimationSet)
-        {
-            FunctionEntity triggerBind = composite.AddFunction(FunctionType.TriggerBindCharacter);
-            triggerBind.AddParameter("bound_trigger", DataType.INTEGER);
-
-            FunctionEntity character = GetCharacter(AnimationSet, out bool didCreate);
-            if (didCreate)
-            {
-                checkpoint.AddParameterLink("on_checkpoint", character, "spawn_npc");
-                character.AddParameterLink("finished_spawning", triggerBind, "trigger");
-            }
-
-            triggerBind.AddParameterLink("characters", character, "npc_reference");
-            return triggerBind;
-        }
-
+        /* Get or create the character entity */
         private static FunctionEntity GetCharacter(string AnimationSet, out bool didCreate)
         {
             string characterCompositePath = "";
@@ -175,17 +170,10 @@ namespace CombineLevels
             }
             Composite characterComposite = commands.GetComposite(characterCompositePath);
 
-            Console.WriteLine(AnimationSet);
             FunctionEntity character = composite.functions.FirstOrDefault(o => o.function == characterComposite.shortGUID);
+            didCreate = character == null;
             if (character == null)
-            {
                 character = composite.AddFunction(characterComposite);
-                didCreate = true;
-            }
-            else
-            {
-                didCreate = false;
-            }
 
             return character;
         }
